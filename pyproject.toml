@@ -1,4 +1,4 @@
-﻿[project]
+[project]
 name = "med-inventory-env"
 version = "1.0.0"
 description = "OpenEnv medical inventory environment"
