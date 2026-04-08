@@ -1,3 +1,11 @@
+---
+title: MedInventoryEnv
+emoji: ??
+colorFrom: blue
+colorTo: green
+sdk: docker
+pinned: false
+---
 # 🏥 MedInventoryEnv
 
 > **An OpenEnv environment for medical store inventory management — real-world AI agent training and evaluation.**
@@ -235,3 +243,4 @@ med-inventory-env/
 ## 📜 License
 
 MIT
+
