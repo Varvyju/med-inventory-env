@@ -1,0 +1,111 @@
+name: med-inventory-env
+version: "1.0.0"
+description: >
+  Medical Store Inventory Management environment where AI agents practice
+  real-world pharmaceutical procurement decisions. Covers reorder detection,
+  quantity optimisation, and multi-supplier budget planning — tasks performed
+  daily by Indian pharmacy managers.
+
+author: "Varun Namavali"
+license: MIT
+
+tags:
+  - healthcare
+  - inventory-management
+  - supply-chain
+  - real-world
+  - openenv
+
+environment:
+  reset_endpoint: /reset
+  step_endpoint: /step
+  state_endpoint: /state
+
+action_space:
+  type: text
+  format: json_string
+  description: >
+    JSON string encoding the agent's procurement decision.
+    Format varies by task (see task descriptions).
+
+observation_space:
+  type: object
+  properties:
+    echoed_message:
+      type: string
+      description: The last action message sent by the agent
+    task_id:
+      type: string
+      enum: [task_1, task_2, task_3]
+    task_description:
+      type: string
+      description: Full task instructions including expected JSON format
+    inventory:
+      type: array
+      description: List of medication objects with stock and demand data
+    suppliers:
+      type: array
+      nullable: true
+      description: Available suppliers with per-item prices (task_3 only)
+    budget:
+      type: number
+      nullable: true
+      description: Total procurement budget in INR (task_3 only)
+    step_number:
+      type: integer
+      description: Current step index within the episode
+    max_steps:
+      type: integer
+      description: Maximum allowed steps before episode terminates
+    feedback:
+      type: string
+      description: Human-readable grader feedback from the previous action
+
+reward:
+  type: float
+  range: [0.0, 1.0]
+  description: >
+    Dense reward signal on every step. Includes a small step-efficiency
+    penalty (0.02 per extra step) to reward concise solutions.
+    Raw grader score minus step penalty, clamped to [0, 1].
+
+tasks:
+  - id: task_1
+    name: "Reorder Threshold Identification"
+    difficulty: easy
+    max_steps: 5
+    reward_threshold: 0.80
+    grader: f1_score
+    description: >
+      Agent must identify all medications where stock_level < reorder_point.
+      Expected action: {"items_to_reorder": ["Med A", "Med B", ...]}
+      Score = F1 between predicted and actual below-threshold items.
+
+  - id: task_2
+    name: "Reorder Quantity Optimisation"
+    difficulty: medium
+    max_steps: 8
+    reward_threshold: 0.75
+    grader: quantity_proximity
+    description: >
+      Agent must compute optimal reorder quantity for each medication below
+      threshold. Formula: max(0, min(30, expiry_days)*daily_demand - stock_level).
+      Expected action: {"order_quantities": {"Med A": 300, ...}}
+      Score = mean proximity score across all items (peaks at exact optimal).
+
+  - id: task_3
+    name: "Multi-Supplier Budget Planning"
+    difficulty: hard
+    max_steps: 10
+    reward_threshold: 0.70
+    grader: coverage_efficiency
+    description: >
+      Agent must select supplier and quantity for each needed medication,
+      staying within a constrained budget that cannot cover everything.
+      Expected action: {"procurement_plan": [{"item":"...", "supplier":"...", "quantity":N},...]}
+      Score = 0.75*coverage + 0.25*budget_efficiency. Heavy penalty if over budget.
+
+baseline_scores:
+  task_1: 0.78
+  task_2: 0.61
+  task_3: 0.54
