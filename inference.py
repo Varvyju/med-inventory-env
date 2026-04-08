@@ -26,9 +26,10 @@ from openai import OpenAI
 
 # ── Configuration ──────────────────────────────────────────────────────────────
 
-API_BASE_URL = os.environ.get("API_BASE_URL", "https://api.openai.com/v1")
-API_KEY      = os.environ.get("HF_TOKEN", os.environ.get("OPENAI_API_KEY", ""))
-MODEL_NAME   = os.environ.get("MODEL_NAME", "gpt-4o-mini")
+API_BASE_URL = os.getenv("API_BASE_URL", "https://api.openai.com/v1")
+HF_TOKEN = os.getenv("HF_TOKEN")
+LOCAL_IMAGE_NAME = os.getenv("LOCAL_IMAGE_NAME")
+MODEL_NAME = os.getenv("MODEL_NAME", "gpt-4o-mini")
 ENV_BASE_URL = os.environ.get("ENV_BASE_URL", "http://localhost:7860")
 
 TEMPERATURE          = 0.1
@@ -227,7 +228,7 @@ async def run_task(
 async def main() -> None:
     print(f"[DEBUG] MedInventoryEnv baseline | model={MODEL_NAME} | env={ENV_BASE_URL}", flush=True)
 
-    llm = OpenAI(base_url=API_BASE_URL, api_key=API_KEY)
+    llm = OpenAI(base_url=API_BASE_URL, api_key=HF_TOKEN)
     env = EnvClient(base_url=ENV_BASE_URL)
 
     all_scores: dict = {}
