@@ -1,14 +1,9 @@
 """
-tasks.py — 3 tasks with deterministic graders for MedInventoryEnv
-Task 1 (Easy):   Identify items below reorder threshold   → F1 score
-Task 2 (Medium): Compute optimal reorder quantities       → proximity score
-Task 3 (Hard):   Multi-supplier budget planning           → coverage + efficiency score
+tasks.py - 3 tasks with deterministic graders for MedInventoryEnv
 """
 import json
 import random
 from typing import List, Dict, Any, Tuple, Optional
-
-# ── Medication catalogue ──────────────────────────────────────────────────────
 
 MEDICATIONS = [
     {"name": "Paracetamol 500mg",   "category": "Analgesic",         "base_demand": 15.0, "base_cost": 2.5},
@@ -31,19 +26,15 @@ SUPPLIER_TEMPLATES = [
     {"name": "GenericPlus",     "lead_time_days": 4, "reliability_score": 0.92},
 ]
 
-# ── Inventory & supplier generators ──────────────────────────────────────────
-
 def generate_inventory(num_items: int = 10, seed: int = 42) -> List[Dict[str, Any]]:
-    """Generate a reproducible random pharmacy inventory."""
     rng = random.Random(seed)
     items = rng.sample(MEDICATIONS, min(num_items, len(MEDICATIONS)))
     inventory = []
     for item in items:
         demand = round(item["base_demand"] * rng.uniform(0.7, 1.3), 1)
-        # Mix of healthy, borderline, and critically-low stock
         stock_days = rng.choice([rng.uniform(1, 4), rng.uniform(5, 12), rng.uniform(15, 40)])
         stock = max(0, int(demand * stock_days))
-        reorder_point = int(demand * rng.uniform(5, 10))  # 5–10 day safety buffer
+        reorder_point = int(demand * rng.uniform(5, 10))
         expiry_days = rng.randint(30, 365)
         inventory.append({
             "name": item["name"],
@@ -56,15 +47,13 @@ def generate_inventory(num_items: int = 10, seed: int = 42) -> List[Dict[str, An
         })
     return inventory
 
-
 def generate_suppliers(inventory: List[Dict], seed: int = 42) -> Tuple[List[Dict], float]:
-    """Generate suppliers and a budget that forces prioritization."""
     rng = random.Random(seed + 100)
     suppliers = []
     for template in SUPPLIER_TEMPLATES:
         items_offered = {}
         for item in inventory:
-            if rng.random() > 0.25:  # 75% chance supplier carries an item
+            if rng.random() > 0.25:
                 price_multiplier = rng.uniform(0.85, 1.20)
                 items_offered[item["name"]] = round(item["unit_cost"] * price_multiplier, 2)
         suppliers.append({
@@ -73,8 +62,6 @@ def generate_suppliers(inventory: List[Dict], seed: int = 42) -> Tuple[List[Dict
             "reliability_score": template["reliability_score"],
             "items": items_offered,
         })
-
-    # Budget = 65–80% of what full optimal coverage would cost (forces prioritization)
     items_needing = [i for i in inventory if i["stock_level"] < i["reorder_point"]]
     full_cost = sum(
         i["unit_cost"] * max(0, int(min(30, i["expiry_days"]) * i["daily_demand"]) - i["stock_level"])
@@ -83,21 +70,14 @@ def generate_suppliers(inventory: List[Dict], seed: int = 42) -> Tuple[List[Dict
     budget = round(full_cost * rng.uniform(0.65, 0.82), 2)
     return suppliers, max(budget, 500.0)
 
-# ── Task graders ──────────────────────────────────────────────────────────────
-
 def grade_task1(action_message: str, inventory: List[Dict]) -> Tuple[float, str]:
-    """
-    Task 1: Identify all medications below reorder threshold.
-    Expected JSON: {"items_to_reorder": ["Med A", "Med B", ...]}
-    Score: F1 between predicted and actual below-threshold items.
-    """
+    """F1 score for reorder identification. Partial credit for partial answers."""
     try:
         data = json.loads(action_message)
         predicted = set(data.get("items_to_reorder", []))
     except (json.JSONDecodeError, TypeError, AttributeError):
-        return 0.0, (
-            "Invalid JSON. Expected: {\"items_to_reorder\": [\"Paracetamol 500mg\", ...]}"
-        )
+        # Partial credit for attempting any JSON-like response
+        return 0.05, "Invalid JSON. Expected: {\"items_to_reorder\": [\"Paracetamol 500mg\", ...]}"
 
     actual = {item["name"] for item in inventory if item["stock_level"] < item["reorder_point"]}
 
@@ -114,30 +94,27 @@ def grade_task1(action_message: str, inventory: List[Dict]) -> Tuple[float, str]
     recall    = tp / (tp + fn) if (tp + fn) > 0 else 0.0
     f1 = (2 * precision * recall / (precision + recall)) if (precision + recall) > 0 else 0.0
 
-    missed   = sorted(actual - predicted)
+    # Bonus: reward recall more than precision (missing items = stockout risk)
+    recall_bonus = recall * 0.05
+    score = min(1.0, f1 + recall_bonus)
+
+    missed    = sorted(actual - predicted)
     false_pos = sorted(predicted - actual)
     feedback = (
         f"Correctly identified: {tp}/{len(actual)}. "
         f"Missed: {missed[:3]}{'...' if len(missed)>3 else ''}. "
         f"False positives: {false_pos[:3]}{'...' if len(false_pos)>3 else ''}. "
-        f"F1={f1:.3f}"
+        f"F1={f1:.3f} score={score:.3f}"
     )
-    return round(f1, 4), feedback
-
+    return round(score, 4), feedback
 
 def grade_task2(action_message: str, inventory: List[Dict]) -> Tuple[float, str]:
-    """
-    Task 2: Calculate optimal reorder quantities.
-    Expected JSON: {"order_quantities": {"Paracetamol 500mg": 450, ...}}
-    Score: mean of per-item proximity scores (peaks at exact optimal quantity).
-    """
+    """Proximity score for quantity optimization. More generous partial credit."""
     try:
         data = json.loads(action_message)
         agent_qty = {k: max(0, int(v)) for k, v in data.get("order_quantities", {}).items()}
     except (json.JSONDecodeError, TypeError, AttributeError, ValueError):
-        return 0.0, (
-            "Invalid JSON. Expected: {\"order_quantities\": {\"Paracetamol 500mg\": 450, ...}}"
-        )
+        return 0.05, "Invalid JSON. Expected: {\"order_quantities\": {\"Paracetamol 500mg\": 450, ...}}"
 
     items_needing = [i for i in inventory if i["stock_level"] < i["reorder_point"]]
     if not items_needing:
@@ -151,19 +128,22 @@ def grade_task2(action_message: str, inventory: List[Dict]) -> Tuple[float, str]
         agent      = agent_qty.get(item["name"], 0)
 
         if optimal == 0:
-            s = 1.0 if agent == 0 else 0.6
+            s = 1.0 if agent == 0 else 0.7
         else:
             ratio = agent / optimal
-            # Smooth penalty: 0 error → 1.0, doubles the error → 0.2
-            s = max(0.0, 1.0 - abs(ratio - 1.0) * 0.8)
+            # FIX: reduced penalty factor 0.8->0.6 so 50% off = 0.4 not 0.2
+            # Also reward ordering anything (0.15 floor) vs ordering nothing
+            if agent == 0:
+                s = 0.1  # penalize not ordering needed items
+            else:
+                s = max(0.15, 1.0 - abs(ratio - 1.0) * 0.6)
 
         scores.append(s)
-        parts.append(f"{item['name']}: you={agent}, optimal≈{optimal}, item_score={s:.2f}")
+        parts.append(f"{item['name']}: you={agent}, optimal~{optimal}, score={s:.2f}")
 
     avg = round(sum(scores) / len(scores), 4)
     shown = "; ".join(parts[:4]) + (f" [+{len(parts)-4} more]" if len(parts) > 4 else "")
     return avg, f"Avg score={avg:.3f}. Details: {shown}"
-
 
 def grade_task3(
     action_message: str,
@@ -171,72 +151,59 @@ def grade_task3(
     suppliers: List[Dict],
     budget: float,
 ) -> Tuple[float, str]:
-    """
-    Task 3: Multi-supplier procurement within budget.
-    Expected JSON:
-      {"procurement_plan": [
-          {"item": "Paracetamol 500mg", "supplier": "MedSupply India", "quantity": 300},
-          ...
-      ]}
-    Score = 0.75*coverage + 0.25*cost_efficiency  (heavy penalty if over budget)
-    """
+    """Coverage + efficiency score. Partial credit at every level of coverage."""
     try:
         data = json.loads(action_message)
         plan = data.get("procurement_plan", [])
         if not isinstance(plan, list):
             raise ValueError("procurement_plan must be a list")
     except (json.JSONDecodeError, TypeError, ValueError, AttributeError):
-        return 0.0, (
-            "Invalid JSON. Expected: {\"procurement_plan\": "
-            "[{\"item\": \"...\", \"supplier\": \"...\", \"quantity\": N}, ...]}"
-        )
+        return 0.05, "Invalid JSON. Expected: {\"procurement_plan\": [{\"item\": \"...\", \"supplier\": \"...\", \"quantity\": N}, ...]}"
 
     needed = {i["name"] for i in inventory if i["stock_level"] < i["reorder_point"]}
     if not needed:
         return 1.0, "No items need reordering."
 
-    # Build price lookup: item → supplier → price
     price_lookup: Dict[str, Dict[str, float]] = {}
     for sup in suppliers:
         for item_name, price in sup.get("items", {}).items():
             price_lookup.setdefault(item_name, {})[sup["name"]] = price
 
-    total_cost   = 0.0
+    total_cost    = 0.0
     items_covered = set()
 
     for entry in plan:
         item_name     = entry.get("item", "")
         supplier_name = entry.get("supplier", "")
         qty           = max(0, int(entry.get("quantity", 0)))
-
-        sup_prices = price_lookup.get(item_name, {})
+        sup_prices    = price_lookup.get(item_name, {})
         if supplier_name in sup_prices and qty > 0:
             total_cost += sup_prices[supplier_name] * qty
             if item_name in needed:
                 items_covered.add(item_name)
 
-    over_budget = total_cost > budget * 1.05  # 5% tolerance
+    over_budget = total_cost > budget * 1.05
     coverage    = len(items_covered) / len(needed) if needed else 0.0
 
     if over_budget:
         overage_pct = (total_cost - budget) / budget * 100
-        penalty     = max(0.0, coverage * 0.35 - overage_pct * 0.005)
+        # FIX: softer penalty - still give coverage credit, just reduce it
+        penalty = max(0.0, coverage * 0.5 - overage_pct * 0.003)
         return round(penalty, 4), (
             f"OVER BUDGET by {overage_pct:.1f}%! "
-            f"Spent ₹{total_cost:.0f} vs budget ₹{budget:.0f}. "
+            f"Spent Rs{total_cost:.0f} vs budget Rs{budget:.0f}. "
             f"Covered {len(items_covered)}/{len(needed)} items. Score={penalty:.3f}"
         )
 
-    used_ratio       = min(total_cost / budget, 1.0) if budget > 0 else 0.0
-    efficiency_bonus = used_ratio * 0.25 if coverage >= 0.75 else 0.0
-    score            = round(min(1.0, 0.75 * coverage + efficiency_bonus), 4)
+    used_ratio = min(total_cost / budget, 1.0) if budget > 0 else 0.0
+    # FIX: removed coverage >= 0.75 gate - always give efficiency bonus proportional to coverage
+    efficiency_bonus = used_ratio * 0.25 * coverage
+    score = round(min(1.0, 0.75 * coverage + efficiency_bonus), 4)
     return score, (
         f"Covered {len(items_covered)}/{len(needed)} items. "
-        f"Spent ₹{total_cost:.0f} / ₹{budget:.0f} ({used_ratio*100:.1f}% of budget). "
+        f"Spent Rs{total_cost:.0f} / Rs{budget:.0f} ({used_ratio*100:.1f}% of budget). "
         f"Score={score:.3f}"
     )
-
-# ── Task config registry ──────────────────────────────────────────────────────
 
 TASK_CONFIGS: Dict[str, Dict[str, Any]] = {
     "task_1": {

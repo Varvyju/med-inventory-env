@@ -1,5 +1,5 @@
-"""
-env.py — MedInventoryEnv core environment logic
+﻿"""
+env.py â€” MedInventoryEnv core environment logic
 Implements reset() / step() / state() with clean episode management.
 """
 import random
@@ -21,7 +21,7 @@ class MedInventoryEnv:
     Medical Store Inventory Management Environment.
 
     The agent receives pharmacy inventory data and must make procurement
-    decisions (reorder identification → quantity optimization → supplier selection).
+    decisions (reorder identification â†’ quantity optimization â†’ supplier selection).
     Rewards are given on every step (not just at episode end) to provide
     a dense learning signal.
     """
@@ -34,7 +34,7 @@ class MedInventoryEnv:
         self._episode_seed: int = 42
         self._best_reward: float = 0.0
 
-    # ── Public API ─────────────────────────────────────────────────────────────
+    # â”€â”€ Public API â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     def reset(self, task_id: str = "task_1", seed: Optional[int] = None) -> ResetResult:
         """Start a new episode for the given task."""
@@ -74,7 +74,7 @@ class MedInventoryEnv:
             feedback=(
                 f"Episode started. Inventory loaded: {len(inventory)} medications, "
                 f"{items_below} currently below reorder point. "
-                + (f"Budget: ₹{budget:.2f}. " if budget else "")
+                + (f"Budget: â‚¹{budget:.2f}. " if budget else "")
                 + "Read the task description carefully and respond with valid JSON."
             )
         )
@@ -107,11 +107,11 @@ class MedInventoryEnv:
         done = False
         if raw_reward >= threshold:
             done     = True
-            feedback = f"✅ SUCCESS — Task solved! {feedback}"
+            feedback = f"âœ… SUCCESS â€” Task solved! {feedback}"
         elif self._step_count >= max_steps:
             done     = True
             feedback = (
-                f"⏱ Max steps reached ({max_steps}). "
+                f"â± Max steps reached ({max_steps}). "
                 f"Best score this episode: {self._best_reward:.3f}. {feedback}"
             )
 
@@ -120,7 +120,7 @@ class MedInventoryEnv:
 
         # Step efficiency penalty: rewards quick solutions
         # Penalty is small (2% per extra step) so it doesn't dominate the signal
-        step_penalty    = (self._step_count - 1) * 0.02
+        step_penalty    = (self._step_count - 1) * 0.01
         adjusted_reward = round(max(0.0, min(1.0, raw_reward - step_penalty)), 4)
 
         obs = self._build_observation(feedback, last_action=action.message)
@@ -141,7 +141,7 @@ class MedInventoryEnv:
         """Return the full internal state (for debugging / validation)."""
         return StateResult(state=dict(self._state))
 
-    # ── Private helpers ────────────────────────────────────────────────────────
+    # â”€â”€ Private helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     def _grade(self, message: str) -> Tuple[float, str]:
         inventory = self._state["inventory"]
@@ -191,3 +191,4 @@ class MedInventoryEnv:
             max_steps=config["max_steps"],
             feedback=feedback,
         )
+
