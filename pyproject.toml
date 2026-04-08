@@ -1,15 +1,15 @@
 ﻿[project]
 name = "med-inventory-env"
 version = "1.0.0"
-description = "OpenEnv environment for medical store inventory management"
+description = "OpenEnv medical inventory environment"
 requires-python = ">=3.11"
-
-[project.dependencies]
-fastapi = ">=0.111.0"
-uvicorn = ">=0.29.0"
-pydantic = ">=2.7.1"
-httpx = ">=0.27.0"
-openai = ">=1.30.1"
+dependencies = [
+    "fastapi>=0.111.0",
+    "uvicorn[standard]>=0.29.0",
+    "pydantic>=2.7.1",
+    "httpx>=0.27.0",
+    "openai>=1.30.1",
+]
 
 [build-system]
 requires = ["setuptools>=68"]
