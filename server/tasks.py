@@ -83,7 +83,7 @@ def grade_task1(action_message: str, inventory: List[Dict]) -> Tuple[float, str]
 
     if not actual:
         if not predicted:
-            return 1.0, "Correct: no items need reordering."
+            return 0.999, "Correct: no items need reordering."
         return 0.3, f"No items need reordering, but you flagged {len(predicted)} incorrectly."
 
     tp = len(predicted & actual)
@@ -106,7 +106,7 @@ def grade_task1(action_message: str, inventory: List[Dict]) -> Tuple[float, str]
         f"False positives: {false_pos[:3]}{'...' if len(false_pos)>3 else ''}. "
         f"F1={f1:.3f} score={score:.3f}"
     )
-    return round(score, 4), feedback
+    return round(max(0.001, min(0.999, score)), 4), feedback
 
 def grade_task2(action_message: str, inventory: List[Dict]) -> Tuple[float, str]:
     """Proximity score for quantity optimization. More generous partial credit."""
@@ -118,7 +118,7 @@ def grade_task2(action_message: str, inventory: List[Dict]) -> Tuple[float, str]
 
     items_needing = [i for i in inventory if i["stock_level"] < i["reorder_point"]]
     if not items_needing:
-        return 1.0, "No items need reordering."
+        return 0.999, "No items need reordering."
 
     scores = []
     parts  = []
@@ -162,7 +162,7 @@ def grade_task3(
 
     needed = {i["name"] for i in inventory if i["stock_level"] < i["reorder_point"]}
     if not needed:
-        return 1.0, "No items need reordering."
+        return 0.999, "No items need reordering."
 
     price_lookup: Dict[str, Dict[str, float]] = {}
     for sup in suppliers:
@@ -189,7 +189,7 @@ def grade_task3(
         overage_pct = (total_cost - budget) / budget * 100
         # FIX: softer penalty - still give coverage credit, just reduce it
         penalty = max(0.0, coverage * 0.5 - overage_pct * 0.003)
-        return round(penalty, 4), (
+        return round(max(0.001, min(0.999, penalty)), 4), (
             f"OVER BUDGET by {overage_pct:.1f}%! "
             f"Spent Rs{total_cost:.0f} vs budget Rs{budget:.0f}. "
             f"Covered {len(items_covered)}/{len(needed)} items. Score={penalty:.3f}"

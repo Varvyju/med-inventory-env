@@ -1,4 +1,4 @@
-﻿"""
+"""
 env.py â€” MedInventoryEnv core environment logic
 Implements reset() / step() / state() with clean episode management.
 """
@@ -121,7 +121,7 @@ class MedInventoryEnv:
         # Step efficiency penalty: rewards quick solutions
         # Penalty is small (2% per extra step) so it doesn't dominate the signal
         step_penalty    = (self._step_count - 1) * 0.01
-        adjusted_reward = round(max(0.0, min(1.0, raw_reward - step_penalty)), 4)
+        adjusted_reward = round(max(0.001, min(0.999, raw_reward - step_penalty)), 4)
 
         obs = self._build_observation(feedback, last_action=action.message)
         return StepResult(
