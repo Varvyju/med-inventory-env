@@ -1,4 +1,4 @@
-﻿---
+---
 title: MedInventoryEnv
 emoji: 💊
 colorFrom: blue
@@ -6,167 +6,142 @@ colorTo: green
 sdk: docker
 pinned: false
 ---
-# ðŸ¥ MedInventoryEnv
 
-> **An OpenEnv environment for medical store inventory management â€” real-world AI agent training and evaluation.**
+# MedInventoryEnv
+
+> An OpenEnv-compliant environment for training and evaluating AI agents on real-world pharmaceutical inventory management — a daily operational challenge faced by 1.2 million Indian pharmacies.
 
 [![OpenEnv](https://img.shields.io/badge/OpenEnv-compliant-blue)](https://github.com/openenv)
-[![HF Space](https://img.shields.io/badge/ðŸ¤—-Hugging%20Face%20Space-yellow)](https://huggingface.co/spaces)
-[![Python](https://img.shields.io/badge/python-3.11-green)](https://python.org)
+[![Phase 2](https://img.shields.io/badge/Phase%202-Passed-brightgreen)](https://huggingface.co/spaces/Varun1622/med-inventory-env)
+[![Python](https://img.shields.io/badge/python-3.11-blue)](https://python.org)
+[![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 ---
 
-## ðŸŽ¯ What Is This?
+## The Problem This Solves
 
-MedInventoryEnv simulates the daily procurement decisions made by Indian pharmacy managers. An AI agent is placed in a realistic inventory scenario and must:
+Every day, pharmacy managers across India manually decide:
 
-1. **Identify** which medications are running low (below reorder threshold)
-2. **Calculate** the optimal quantity to reorder for each item
-3. **Plan** multi-supplier procurement within a constrained budget
+- Which medications are running dangerously low and need immediate reordering?
+- How much should be ordered — enough to cover demand without expiry waste?
+- Which supplier offers the best price, and can we stay within budget while covering the most critical items?
 
-This is a genuine operational challenge â€” Indian medical stores (â‰ˆ1.2 million nationwide) manage 200â€“500 SKUs with varying demand, expiry constraints, and supplier relationships. Mistakes cause stockouts (patient harm) or overstock (expiry waste).
+These decisions are made with spreadsheets, paper ledgers, or gut instinct. A wrong call means either a stockout (a patient cannot get insulin or antibiotics) or overstock (Rs 50,000 worth of short-expiry medication goes to waste).
 
----
-
-## ðŸ“ Environment Design
-
-### Architecture
-
-```
-inference.py  â†â”€â”€â†’  FastAPI Server (port 7860)
-                         â”‚
-                    â”Œâ”€â”€â”€â”€â”´â”€â”€â”€â”€â”
-                    â”‚  env.py â”‚   episode state, step logic
-                    â”‚tasks.py â”‚   3 graders (easyâ†’hard)
-                    â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
-```
-
-### API Endpoints
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `POST` | `/reset` | Start new episode. Body: `{"task_id": "task_1", "seed": 42}` |
-| `POST` | `/step`  | Send action. Body: `{"message": "<json_string>"}` |
-| `GET`  | `/state` | Current full state (debugging) |
-| `GET`  | `/tasks` | List all task configs |
-| `GET`  | `/health`| Health check |
-
-### Action Space
-
-A plain JSON string encoding the agent's decision. Format differs per task (see below).
-
-### Observation Space
-
-```json
-{
-  "echoed_message":   "<last action sent>",
-  "task_id":          "task_1 | task_2 | task_3",
-  "task_description": "<full task prompt with expected JSON format>",
-  "inventory": [
-    {
-      "name":          "Paracetamol 500mg",
-      "category":      "Analgesic",
-      "stock_level":   45,
-      "reorder_point": 150,
-      "daily_demand":  13.2,
-      "expiry_days":   180,    // task_2 and task_3 only
-      "unit_cost":     2.47    // task_2 and task_3 only
-    }
-  ],
-  "suppliers":   [...],   // task_3 only
-  "budget":      4200.0,  // task_3 only (INR)
-  "step_number": 1,
-  "max_steps":   5,
-  "feedback":    "<grader feedback from previous action>"
-}
-```
-
-### Reward Function
-
-- **Dense** â€” reward on every step, not just at episode end
-- **Raw score** â€” computed by the task-specific grader (0.0â€“1.0)
-- **Step efficiency penalty** â€” `(step - 1) * 0.02` subtracted to reward concise solutions
-- **Final reward** = `clamp(raw_score - step_penalty, 0.0, 1.0)`
+**MedInventoryEnv turns this into a rigorous, reproducible benchmark for AI agents.**
 
 ---
 
-## ðŸ“‹ Tasks
+## Environment Overview
 
-### Task 1 â€” Reorder Threshold Identification *(Easy)*
+An AI agent is placed inside a simulated Indian medical store. It receives real inventory data — stock levels, daily demand rates, expiry windows, supplier catalogues, and procurement budgets — and must make procurement decisions across three tasks of increasing difficulty.
 
-**Objective:** Identify all medications where `stock_level < reorder_point`.
+The environment is fully stateful, seeded for reproducibility, and provides dense reward signals at every step so agents can learn from partial progress rather than only binary success/failure.
+Agent (inference.py)
+|
+| POST /reset  ->  start episode, receive inventory
+| POST /step   ->  send decision, receive reward + feedback
+| GET  /state  ->  inspect full environment state
+|
+FastAPI Server (port 7860)
+|
+env.py       — episode state, step logic, reward shaping
+tasks.py     — 3 graders: F1 / proximity / coverage+efficiency
+models.py    — typed Pydantic: Observation, Action, StepResult
+
+---
+
+## Tasks
+
+### Task 1 — Reorder Threshold Identification (Easy)
+
+**Real-world analog:** The morning stock check. Which medications have fallen below their safety buffer and need to be ordered today?
+
+**Objective:** Identify all medications where stock_level < reorder_point.
 
 **Action format:**
 ```json
-{"items_to_reorder": ["Paracetamol 500mg", "Metformin 500mg"]}
+{"items_to_reorder": ["Paracetamol 500mg", "Insulin Regular"]}
 ```
 
-**Grader:** F1 score between predicted and actual below-threshold items.  
+**Grader:** F1 score with a small recall bonus. Missing a critical item is worse than a false positive.
 **Max steps:** 5 | **Success threshold:** 0.80
 
 ---
 
-### Task 2 â€” Reorder Quantity Optimisation *(Medium)*
+### Task 2 — Reorder Quantity Optimisation (Medium)
 
-**Objective:** For each medication below threshold, compute optimal order quantity.
+**Real-world analog:** The purchase order calculation. How much of each medication should be ordered — enough to last until the next delivery cycle, but not so much that it expires before being sold?
 
-**Formula:** `optimal = max(0, min(30, expiry_days) Ã— daily_demand âˆ’ stock_level)`
+**Objective:** For each medication below threshold, compute the optimal order quantity.
+
+**Formula:** optimal_qty = max(0, min(30, expiry_days) x daily_demand - stock_level)
 
 **Action format:**
 ```json
-{"order_quantities": {"Paracetamol 500mg": 351, "Metformin 500mg": 240}}
+{"order_quantities": {"Paracetamol 500mg": 351, "Insulin Regular": 98}}
 ```
 
-**Grader:** Mean per-item proximity score â€” peaks at exact optimal, degrades smoothly.  
+**Grader:** Mean per-item proximity score — peaks at exact optimal, degrades smoothly with distance.
 **Max steps:** 8 | **Success threshold:** 0.75
 
 ---
 
-### Task 3 â€” Multi-Supplier Budget Planning *(Hard)*
+### Task 3 — Multi-Supplier Budget Planning (Hard)
 
-**Objective:** Select supplier + quantity for each needed item, staying within budget. Budget intentionally covers only ~70% of full needs â€” the agent must prioritise.
+**Real-world analog:** The monthly procurement meeting. Three suppliers offer different prices for overlapping catalogues. The budget covers only 70% of full needs — the agent must prioritise.
+
+**Objective:** Select supplier and quantity for each needed medication, maximising coverage within a constrained budget.
 
 **Action format:**
 ```json
 {
   "procurement_plan": [
-    {"item": "Paracetamol 500mg", "supplier": "PharmaDirect",    "quantity": 300},
-    {"item": "Metformin 500mg",   "supplier": "MedSupply India", "quantity": 200}
+    {"item": "Paracetamol 500mg", "supplier": "PharmaDirect", "quantity": 300},
+    {"item": "Insulin Regular", "supplier": "MedSupply India", "quantity": 80}
   ]
 }
 ```
 
-**Grader:** `0.75 Ã— coverage_score + 0.25 Ã— budget_efficiency`. Heavy penalty if over budget.  
+**Grader:** 0.75 x coverage_score + 0.25 x budget_efficiency. Penalty for exceeding budget.
 **Max steps:** 10 | **Success threshold:** 0.70
 
 ---
 
-## ðŸ“Š Baseline Scores
+## Reward Function
 
-Run with `gpt-4o-mini` (seed=42, temperature=0.1):
+Rewards are dense — the agent receives a signal on every step, not just at episode end.
+raw_score    = grader output, strictly in (0.001, 0.999)
+step_penalty = (step_number - 1) x 0.01
+final_reward = clamp(raw_score - step_penalty, 0.001, 0.999)
 
-| Task | Score | Steps |
-|------|-------|-------|
-| Task 1 â€” Reorder Identification | 0.78 | 2 |
-| Task 2 â€” Quantity Optimisation  | 0.61 | 3 |
-| Task 3 â€” Budget Planning        | 0.54 | 4 |
-| **Overall Average**             | **0.64** | â€” |
+The step efficiency penalty is small (1% per extra step) so it guides agents toward concise solutions without dominating the learning signal.
 
 ---
 
-## ðŸš€ Setup & Usage
+## Baseline Scores
 
-### Option A â€” Docker (recommended)
+Measured with gpt-4o-mini, seed=42, temperature=0.1:
+
+| Task | Score | Steps |
+|------|-------|-------|
+| Task 1 — Reorder Identification | 0.77 | 2 |
+| Task 2 — Quantity Optimisation | 0.63 | 3 |
+| Task 3 — Budget Planning | 0.56 | 4 |
+| Overall Average | 0.65 | — |
+
+---
+
+## Setup and Usage
+
+### Docker (recommended)
 
 ```bash
-git clone https://github.com/<your-username>/med-inventory-env
+git clone https://github.com/Varvyju/med-inventory-env
 cd med-inventory-env
-
-# Build and run the environment server
 docker build -t med-inventory-env .
 docker run -p 7860:7860 med-inventory-env
 
-# In another terminal â€” run the inference script
 pip install openai httpx
 export API_BASE_URL=https://api.openai.com/v1
 export MODEL_NAME=gpt-4o-mini
@@ -175,73 +150,62 @@ export ENV_BASE_URL=http://localhost:7860
 python inference.py
 ```
 
-### Option B â€” Local (development)
+### Hugging Face Space (live now)
 
 ```bash
-# Start server
-cd server
-pip install -r requirements.txt
-python main.py
-
-# Run inference
-cd ..
 pip install openai httpx
-export API_BASE_URL=... MODEL_NAME=... HF_TOKEN=... ENV_BASE_URL=http://localhost:7860
-python inference.py
-```
-
-### Option C â€” Hugging Face Space
-
-The environment is live at: `https://huggingface.co/spaces/<username>/med-inventory-env`
-
-```bash
-export ENV_BASE_URL=https://<username>-med-inventory-env.hf.space
+export API_BASE_URL=https://api.openai.com/v1
+export MODEL_NAME=gpt-4o-mini
+export HF_TOKEN=sk-...
+export ENV_BASE_URL=https://Varun1622-med-inventory-env.hf.space
 python inference.py
 ```
 
 ---
 
-## ðŸ”§ Environment Variables
+## Environment Variables
 
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `API_BASE_URL` | âœ… | LLM API endpoint (e.g. `https://api.openai.com/v1`) |
-| `MODEL_NAME`   | âœ… | Model identifier (e.g. `gpt-4o-mini`) |
-| `HF_TOKEN`     | âœ… | Hugging Face / OpenAI API key |
-| `ENV_BASE_URL` | âŒ | Environment server URL (default: `http://localhost:7860`) |
+| Variable | Default | Description |
+|----------|---------|-------------|
+| API_BASE_URL | https://api.openai.com/v1 | LLM API endpoint |
+| MODEL_NAME | gpt-4o-mini | Model identifier |
+| HF_TOKEN | — | API key, no default |
+| ENV_BASE_URL | http://localhost:7860 | Environment server URL |
+| LOCAL_IMAGE_NAME | — | Docker image for local runs |
 
 ---
 
-## ðŸ“ Project Structure
-
-```
+## Project Structure
 med-inventory-env/
-â”œâ”€â”€ Dockerfile            # Container build for HF Spaces
-â”œâ”€â”€ openenv.yaml          # OpenEnv spec metadata
-â”œâ”€â”€ inference.py          # Baseline inference script (root)
-â”œâ”€â”€ requirements.txt      # inference.py dependencies
-â”œâ”€â”€ README.md
-â””â”€â”€ server/
-    â”œâ”€â”€ main.py           # FastAPI server
-    â”œâ”€â”€ env.py            # Episode management, step logic
-    â”œâ”€â”€ tasks.py          # Task definitions + graders
-    â”œâ”€â”€ models.py         # Pydantic typed models
-    â””â”€â”€ requirements.txt  # Server dependencies
-```
+├── Dockerfile       — container build for HF Spaces, port 7860
+├── openenv.yaml     — OpenEnv spec metadata and task registry
+├── inference.py     — baseline inference script (root level)
+├── pyproject.toml   — project metadata and dependencies
+├── README.md
+└── server/
+├── main.py      — FastAPI: /reset /step /state /health /tasks
+├── env.py       — episode management, step logic, reward shaping
+├── tasks.py     — 3 task definitions + deterministic graders
+├── models.py    — Pydantic typed models
+├── app.py       — server entry point
+└── requirements.txt
 
 ---
 
-## ðŸ’¡ Why This Environment Matters
+## Why This Environment Matters
 
-- **1.2 million** pharmacies in India lack AI-assisted inventory tools
-- Stockouts of critical medications (insulin, antibiotics) cause direct patient harm
-- Overstocking of short-expiry medications causes lakhs in waste annually
-- This environment provides a rigorous, reproducible benchmark for agents tackling real supply-chain decisions in a healthcare context
+India has approximately 1.2 million retail pharmacies. The vast majority operate without software for inventory decisions. The consequences are not abstract:
+
+- Insulin stockouts affect 77 million diabetic patients in India
+- Antibiotic stockouts during infections directly increase mortality risk
+- Expired medication waste costs the Indian pharmacy sector an estimated Rs 3,000 crore annually
+
+MedInventoryEnv provides a reproducible benchmark that measures whether an AI agent can actually help with these decisions. The tasks reflect real constraints — demand uncertainty, expiry windows, supplier variability, budget limits — that make this hard for humans and harder still for agents.
+
+This is a domain where better AI agents have direct, measurable real-world impact.
 
 ---
 
-## ðŸ“œ License
+## License
 
 MIT
-
-
